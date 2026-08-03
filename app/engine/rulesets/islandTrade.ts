@@ -42,6 +42,7 @@ export const islandTradeRuleset: Ruleset = {
       ],
       victoryPoints: 0,
       maxPerPlayer: 15,
+      resourceMultiplier: 0,
     },
     {
       id: "settlement",
@@ -54,6 +55,7 @@ export const islandTradeRuleset: Ruleset = {
       ],
       victoryPoints: 1,
       maxPerPlayer: 5,
+      resourceMultiplier: 1,
     },
     {
       id: "city",
@@ -64,6 +66,7 @@ export const islandTradeRuleset: Ruleset = {
       ],
       victoryPoints: 2,
       maxPerPlayer: 4,
+      resourceMultiplier: 2,
     },
   ],
 

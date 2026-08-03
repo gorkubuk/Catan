@@ -30,6 +30,8 @@ export interface BuildingTypeConfig {
   victoryPoints: number;
   /** How many of this building each player may place before running out of pieces. */
   maxPerPlayer: number;
+  /** Resource units this building produces per matching dice roll, per adjacent tile. */
+  resourceMultiplier: number;
 }
 
 export interface DevelopmentCardConfig {

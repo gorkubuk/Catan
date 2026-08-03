@@ -1,4 +1,4 @@
-import type { SeededRng } from "../rng";
+import type { RngCursor } from "../rng";
 import { shuffle } from "../rng";
 import type { Ruleset } from "../ruleset/types";
 import type { AxialCoord, Board, Tile } from "./types";
@@ -21,7 +21,7 @@ export function generateHexCoordinates(radius: number): AxialCoord[] {
  * for a given rng seed, so the same seed always reproduces the same board —
  * required for server/client agreement and for replaying past games.
  */
-export function generateBoard(ruleset: Ruleset, rng: SeededRng): Board {
+export function generateBoard(ruleset: Ruleset, rng: RngCursor): Board {
   const coords = generateHexCoordinates(ruleset.board.radius);
 
   const tileTypePool = ruleset.board.tileTypes.flatMap((tileType) =>
