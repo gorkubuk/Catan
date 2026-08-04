@@ -9,4 +9,5 @@ export * from "./moves/types";
 export * from "./moves/validate";
 export * from "./moves/apply";
 export * from "./production";
+export * from "./scoring";
 export { islandTradeRuleset } from "./rulesets/islandTrade";

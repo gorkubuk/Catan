@@ -8,6 +8,7 @@ export interface PlayerState {
   resources: ResourceHand;
   developmentCards: Record<string, number>;
   victoryPoints: number;
+  soldiersPlayed: number;
 }
 
 export type GamePhase =
@@ -15,6 +16,7 @@ export type GamePhase =
   | "setup-round-2"
   | "awaiting-roll"
   | "main"
+  | "discard"
   | "blocker-resolution"
   | "game-over";
 
@@ -52,4 +54,8 @@ export interface GameState {
   blockerTileKey: string | null;
   turnNumber: number;
   lastDiceRoll: number[] | null;
+  /** Remaining development cards, shuffled; index 0 is the top of the deck. */
+  developmentCardDeck: string[];
+  /** Player ids still owing a discard during phase "discard". */
+  playersAwaitingDiscard: string[];
 }

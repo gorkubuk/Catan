@@ -1,7 +1,7 @@
 import { axialKey } from "../board/types";
 import type { BoardTopology } from "../board/topology";
 import type { BuildingCost, Ruleset } from "../ruleset/types";
-import type { GameState, PlayerState } from "../state/types";
+import type { GameState, PlayerState, ResourceHand } from "../state/types";
 import type { Move, MoveResult } from "./types";
 
 const ok: MoveResult = { ok: true };
@@ -11,6 +11,10 @@ function fail(reason: string): MoveResult {
 
 export function currentPlayer(state: GameState): PlayerState {
   return state.players[state.currentPlayerIndex];
+}
+
+function totalResources(hand: ResourceHand): number {
+  return Object.values(hand).reduce((a, b) => a + b, 0);
 }
 
 function hasEnoughResources(player: PlayerState, cost: BuildingCost[]): boolean {
@@ -44,7 +48,8 @@ function edgeTouchesOwnedNetwork(
   topology: BoardTopology,
   state: GameState,
   playerId: string,
-  edgeId: string
+  edgeId: string,
+  extraOwnedEdgeIds: string[] = []
 ): boolean {
   const edge = topology.edges.get(edgeId);
   if (!edge) return false;
@@ -52,8 +57,31 @@ function edgeTouchesOwnedNetwork(
     const building = state.buildings[v];
     if (building && building.ownerId === playerId) return true;
     const touchingEdges = topology.vertexEdges.get(v) ?? [];
-    return touchingEdges.some((e2) => e2 !== edgeId && state.roads[e2]?.ownerId === playerId);
+    return touchingEdges.some(
+      (e2) => e2 !== edgeId && (state.roads[e2]?.ownerId === playerId || extraOwnedEdgeIds.includes(e2))
+    );
   });
+}
+
+function validateBlockerTarget(
+  ruleset: Ruleset,
+  state: GameState,
+  tileCoord: { q: number; r: number },
+  stealFromPlayerId: string | undefined
+): MoveResult {
+  if (!ruleset.blockerMechanic.enabled) return fail("Blocker mechanic is disabled in this ruleset.");
+
+  const key = axialKey(tileCoord);
+  if (!state.board.tiles.some((t) => axialKey(t.coord) === key)) return fail("Tile is not on this board.");
+  if (key === state.blockerTileKey) return fail("Blocker is already on that tile.");
+
+  if (stealFromPlayerId) {
+    const target = state.players.find((p) => p.id === stealFromPlayerId);
+    if (!target) return fail("Target player does not exist.");
+    if (totalResources(target.resources) === 0) return fail("Target player has no resources to steal.");
+  }
+
+  return ok;
 }
 
 export function validatePlaceSettlement(
@@ -166,21 +194,108 @@ export function validateMoveBlocker(
   tileCoord: { q: number; r: number },
   stealFromPlayerId: string | undefined
 ): MoveResult {
-  if (!ruleset.blockerMechanic.enabled) return fail("Blocker mechanic is disabled in this ruleset.");
   if (state.phase !== "blocker-resolution") return fail(`Cannot move the blocker during phase "${state.phase}".`);
+  return validateBlockerTarget(ruleset, state, tileCoord, stealFromPlayerId);
+}
 
-  const key = axialKey(tileCoord);
-  if (!state.board.tiles.some((t) => axialKey(t.coord) === key)) return fail("Tile is not on this board.");
-  if (key === state.blockerTileKey) return fail("Blocker is already on that tile.");
+export function validateDiscardResources(
+  ruleset: Ruleset,
+  state: GameState,
+  playerId: string,
+  resources: ResourceHand
+): MoveResult {
+  if (state.phase !== "discard") return fail(`Cannot discard during phase "${state.phase}".`);
+  if (!state.playersAwaitingDiscard.includes(playerId)) return fail("This player owes no discard right now.");
 
-  if (stealFromPlayerId) {
-    const target = state.players.find((p) => p.id === stealFromPlayerId);
-    if (!target) return fail("Target player does not exist.");
-    const totalResources = Object.values(target.resources).reduce((a, b) => a + b, 0);
-    if (totalResources === 0) return fail("Target player has no resources to steal.");
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player) return fail("Player does not exist.");
+
+  const requiredDiscard = Math.floor(totalResources(player.resources) / 2);
+  const offered = totalResources(resources);
+  if (offered !== requiredDiscard) {
+    return fail(`Must discard exactly ${requiredDiscard} cards, offered ${offered}.`);
   }
-
+  for (const [resourceId, amount] of Object.entries(resources)) {
+    if (amount < 0) return fail("Cannot discard a negative amount.");
+    if ((player.resources[resourceId] ?? 0) < amount) return fail("Cannot discard resources you do not have.");
+  }
+  void ruleset;
   return ok;
+}
+
+export function validateTradeWithBank(
+  ruleset: Ruleset,
+  state: GameState,
+  playerId: string,
+  giveResourceId: string,
+  giveAmount: number,
+  receiveResourceId: string
+): MoveResult {
+  if (state.phase !== "main") return fail(`Cannot trade during phase "${state.phase}".`);
+  if (giveResourceId === receiveResourceId) return fail("Cannot trade a resource for itself.");
+  if (giveAmount !== ruleset.bankTradeRatio) return fail(`Bank trades must give exactly ${ruleset.bankTradeRatio}.`);
+  if (!ruleset.resources.some((r) => r.id === receiveResourceId)) return fail("Unknown resource to receive.");
+
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player || (player.resources[giveResourceId] ?? 0) < giveAmount) {
+    return fail("Not enough resources for this trade.");
+  }
+  return ok;
+}
+
+export function validateBuyDevelopmentCard(ruleset: Ruleset, state: GameState, playerId: string): MoveResult {
+  if (state.phase !== "main") return fail(`Cannot buy a development card during phase "${state.phase}".`);
+  if (state.developmentCardDeck.length === 0) return fail("Development card deck is empty.");
+
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player || !hasEnoughResources(player, ruleset.developmentCardCost)) {
+    return fail("Not enough resources to buy a development card.");
+  }
+  return ok;
+}
+
+export function validatePlayDevelopmentCard(
+  ruleset: Ruleset,
+  topology: BoardTopology,
+  state: GameState,
+  playerId: string,
+  move: Extract<Move, { type: "PLAY_DEVELOPMENT_CARD" }>
+): MoveResult {
+  if (state.phase !== "main") return fail(`Cannot play a development card during phase "${state.phase}".`);
+
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player) return fail("Player does not exist.");
+  if ((player.developmentCards[move.cardId] ?? 0) < 1) return fail(`No ${move.cardId} card to play.`);
+
+  switch (move.cardId) {
+    case "soldier":
+      return validateBlockerTarget(ruleset, state, move.tileCoord, move.stealFromPlayerId);
+    case "trade-monopoly":
+      if (!ruleset.resources.some((r) => r.id === move.resourceId)) return fail("Unknown resource.");
+      return ok;
+    case "path-builder": {
+      const roadConfig = ruleset.buildings.find((b) => b.id === "road")!;
+      if (countPlacedByPlayer(state, playerId, "road") + 2 > roadConfig.maxPerPlayer) {
+        return fail("Not enough road pieces left for 2 free roads.");
+      }
+      const [edgeA, edgeB] = move.edgeIds;
+      if (edgeA === edgeB) return fail("Must choose two different edges.");
+      if (!topology.edges.has(edgeA) || !topology.edges.has(edgeB)) return fail("Edge does not exist on this board.");
+      if (state.roads[edgeA] || state.roads[edgeB]) return fail("One of those edges already has a road.");
+      if (!edgeTouchesOwnedNetwork(topology, state, playerId, edgeA)) {
+        return fail("First free road must connect to your existing network.");
+      }
+      if (!edgeTouchesOwnedNetwork(topology, state, playerId, edgeB, [edgeA])) {
+        return fail("Second free road must connect to your network or the first free road.");
+      }
+      return ok;
+    }
+    case "harvest":
+      if (move.resourceIds.some((id) => !ruleset.resources.some((r) => r.id === id))) {
+        return fail("Unknown resource.");
+      }
+      return ok;
+  }
 }
 
 export function validateEndTurn(state: GameState): MoveResult {
@@ -188,7 +303,17 @@ export function validateEndTurn(state: GameState): MoveResult {
   return ok;
 }
 
-export function validateMove(ruleset: Ruleset, topology: BoardTopology, state: GameState, playerId: string, move: Move): MoveResult {
+export function validateMove(
+  ruleset: Ruleset,
+  topology: BoardTopology,
+  state: GameState,
+  playerId: string,
+  move: Move
+): MoveResult {
+  if (move.type === "DISCARD_RESOURCES") {
+    return validateDiscardResources(ruleset, state, playerId, move.resources);
+  }
+
   const isCurrentPlayer = currentPlayer(state).id === playerId;
   if (!isCurrentPlayer) return fail("It is not this player's turn.");
 
@@ -203,6 +328,12 @@ export function validateMove(ruleset: Ruleset, topology: BoardTopology, state: G
       return validateRollDice(state);
     case "MOVE_BLOCKER":
       return validateMoveBlocker(ruleset, state, move.tileCoord, move.stealFromPlayerId);
+    case "TRADE_WITH_BANK":
+      return validateTradeWithBank(ruleset, state, playerId, move.giveResourceId, move.giveAmount, move.receiveResourceId);
+    case "BUY_DEVELOPMENT_CARD":
+      return validateBuyDevelopmentCard(ruleset, state, playerId);
+    case "PLAY_DEVELOPMENT_CARD":
+      return validatePlayDevelopmentCard(ruleset, topology, state, playerId, move);
     case "END_TURN":
       return validateEndTurn(state);
   }

@@ -81,8 +81,14 @@ export interface Ruleset {
   board: BoardLayoutConfig;
   buildings: BuildingTypeConfig[];
   developmentCards: DevelopmentCardConfig[];
+  /** Flat cost to draw a development card, regardless of which one comes up. */
+  developmentCardCost: BuildingCost[];
   dice: DiceConfig;
   blockerMechanic: BlockerMechanicConfig;
   bonusBadges: BonusBadgeConfig[];
   winCondition: WinConditionConfig;
+  /** Units of one resource a player must give the bank for 1 unit of another, with no port. */
+  bankTradeRatio: number;
+  /** Total resource cards a hand may hold when the blocker mechanic triggers before discarding half (rounded down). */
+  discardThreshold: number;
 }

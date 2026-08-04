@@ -77,6 +77,11 @@ export const islandTradeRuleset: Ruleset = {
     { id: "harvest", displayName: "Harvest Card", count: 2, victoryPoints: 0 },
     { id: "merit", displayName: "Merit Card", count: 5, victoryPoints: 1 },
   ],
+  developmentCardCost: [
+    { resourceId: "grain", amount: 1 },
+    { resourceId: "wool", amount: 1 },
+    { resourceId: "stone", amount: 1 },
+  ],
 
   dice: {
     diceCount: 2,
@@ -97,4 +102,7 @@ export const islandTradeRuleset: Ruleset = {
   winCondition: {
     targetVictoryPoints: 10,
   },
+
+  bankTradeRatio: 4,
+  discardThreshold: 7,
 };

@@ -1,7 +1,9 @@
 import { axialKey } from "../board/types";
+import type { AxialCoord } from "../board/types";
 import type { BoardTopology, Vertex } from "../board/topology";
 import { createRngCursor, randomInt, rollDice } from "../rng";
 import { applyProduction, computeProduction } from "../production";
+import { recomputeAll } from "../scoring";
 import type { BuildingCost, Ruleset } from "../ruleset/types";
 import type { GameState, PlayerState, ResourceHand } from "../state/types";
 import { currentPlayer, validateMove } from "./validate";
@@ -27,25 +29,34 @@ function updatePlayer(state: GameState, playerId: string, update: (p: PlayerStat
   return { ...state, players: state.players.map((p) => (p.id === playerId ? update(p) : p)) };
 }
 
-function recomputeVictoryPoints(ruleset: Ruleset, state: GameState, playerId: string): GameState {
-  const buildingVp = new Map(ruleset.buildings.map((b) => [b.id, b.victoryPoints]));
-  const devVp = new Map(ruleset.developmentCards.map((c) => [c.id, c.victoryPoints]));
+function moveBlockerAndSteal(
+  state: GameState,
+  tileCoord: AxialCoord,
+  stealFromPlayerId: string | undefined,
+  thiefId: string
+): GameState {
+  let newState: GameState = { ...state, blockerTileKey: axialKey(tileCoord) };
 
-  let newState = updatePlayer(state, playerId, (p) => {
-    let vp = 0;
-    for (const b of Object.values(state.buildings)) {
-      if (b.ownerId === p.id) vp += buildingVp.get(b.buildingTypeId) ?? 0;
+  if (stealFromPlayerId) {
+    const cursor = createRngCursor(state.rngState);
+    const target = state.players.find((p) => p.id === stealFromPlayerId)!;
+    const pool: string[] = [];
+    for (const [resourceId, amount] of Object.entries(target.resources)) {
+      for (let i = 0; i < amount; i++) pool.push(resourceId);
     }
-    for (const [cardId, count] of Object.entries(p.developmentCards)) {
-      vp += (devVp.get(cardId) ?? 0) * count;
-    }
-    return { ...p, victoryPoints: vp };
-  });
+    const stolenResource = pool[randomInt(cursor, 0, pool.length - 1)];
 
-  const player = newState.players.find((p) => p.id === playerId)!;
-  if (player.victoryPoints >= ruleset.winCondition.targetVictoryPoints) {
-    newState = { ...newState, phase: "game-over" };
+    newState = updatePlayer(newState, target.id, (p) => ({
+      ...p,
+      resources: { ...p.resources, [stolenResource]: (p.resources[stolenResource] ?? 0) - 1 },
+    }));
+    newState = updatePlayer(newState, thiefId, (p) => ({
+      ...p,
+      resources: { ...p.resources, [stolenResource]: (p.resources[stolenResource] ?? 0) + 1 },
+    }));
+    newState = { ...newState, rngState: cursor.state };
   }
+
   return newState;
 }
 
@@ -102,7 +113,7 @@ function applyPlaceSettlement(ruleset: Ruleset, topology: BoardTopology, state: 
     }));
   }
 
-  newState = recomputeVictoryPoints(ruleset, newState, playerId);
+  newState = recomputeAll(ruleset, topology, newState);
 
   if (isSetup) {
     newState = { ...newState, setupStep: "road", setupPendingVertexId: vertexId };
@@ -114,7 +125,7 @@ function applyPlaceSettlement(ruleset: Ruleset, topology: BoardTopology, state: 
   return newState;
 }
 
-function applyPlaceRoad(ruleset: Ruleset, state: GameState, playerId: string, edgeId: string): GameState {
+function applyPlaceRoad(ruleset: Ruleset, topology: BoardTopology, state: GameState, playerId: string, edgeId: string): GameState {
   const isSetup = state.phase === "setup-round-1" || state.phase === "setup-round-2";
   const roadConfig = ruleset.buildings.find((b) => b.id === "road")!;
 
@@ -125,14 +136,18 @@ function applyPlaceRoad(ruleset: Ruleset, state: GameState, playerId: string, ed
       ...p,
       resources: deductCost(p.resources, roadConfig.cost),
     }));
-  } else {
+  }
+
+  newState = recomputeAll(ruleset, topology, newState);
+
+  if (isSetup) {
     newState = advanceSetupTurn(newState);
   }
 
   return newState;
 }
 
-function applyBuildCity(ruleset: Ruleset, state: GameState, playerId: string, vertexId: string): GameState {
+function applyBuildCity(ruleset: Ruleset, topology: BoardTopology, state: GameState, playerId: string, vertexId: string): GameState {
   const cityConfig = ruleset.buildings.find((b) => b.id === "city")!;
 
   let newState: GameState = {
@@ -144,7 +159,7 @@ function applyBuildCity(ruleset: Ruleset, state: GameState, playerId: string, ve
     resources: deductCost(p.resources, cityConfig.cost),
   }));
 
-  return recomputeVictoryPoints(ruleset, newState, playerId);
+  return recomputeAll(ruleset, topology, newState);
 }
 
 function applyRollDice(ruleset: Ruleset, topology: BoardTopology, state: GameState): GameState {
@@ -155,9 +170,13 @@ function applyRollDice(ruleset: Ruleset, topology: BoardTopology, state: GameSta
   let newState: GameState = { ...state, rngState: cursor.state, lastDiceRoll: diceValues };
 
   if (ruleset.blockerMechanic.enabled && total === ruleset.blockerMechanic.triggerOnRollTotal) {
-    // Note: the "discard half your hand above 7 cards" rule some rulesets pair
-    // with this roll is not implemented yet — deliberately left for later.
-    newState = { ...newState, phase: "blocker-resolution" };
+    const playersAwaitingDiscard = newState.players
+      .filter((p) => Object.values(p.resources).reduce((a, b) => a + b, 0) > ruleset.discardThreshold)
+      .map((p) => p.id);
+    newState =
+      playersAwaitingDiscard.length > 0
+        ? { ...newState, phase: "discard", playersAwaitingDiscard }
+        : { ...newState, phase: "blocker-resolution" };
   } else {
     const production = computeProduction(ruleset, topology, newState, total);
     newState = applyProduction(newState, production);
@@ -167,35 +186,110 @@ function applyRollDice(ruleset: Ruleset, topology: BoardTopology, state: GameSta
   return newState;
 }
 
-function applyMoveBlocker(
-  state: GameState,
-  tileCoord: { q: number; r: number },
-  stealFromPlayerId: string | undefined
-): GameState {
-  let newState: GameState = { ...state, blockerTileKey: axialKey(tileCoord) };
-
-  if (stealFromPlayerId) {
-    const cursor = createRngCursor(state.rngState);
-    const target = state.players.find((p) => p.id === stealFromPlayerId)!;
-    const pool: string[] = [];
-    for (const [resourceId, amount] of Object.entries(target.resources)) {
-      for (let i = 0; i < amount; i++) pool.push(resourceId);
-    }
-    const stolenResource = pool[randomInt(cursor, 0, pool.length - 1)];
-    const thiefId = currentPlayer(state).id;
-
-    newState = updatePlayer(newState, target.id, (p) => ({
-      ...p,
-      resources: { ...p.resources, [stolenResource]: (p.resources[stolenResource] ?? 0) - 1 },
-    }));
-    newState = updatePlayer(newState, thiefId, (p) => ({
-      ...p,
-      resources: { ...p.resources, [stolenResource]: (p.resources[stolenResource] ?? 0) + 1 },
-    }));
-    newState = { ...newState, rngState: cursor.state };
-  }
-
+function applyMoveBlocker(state: GameState, tileCoord: AxialCoord, stealFromPlayerId: string | undefined): GameState {
+  const thiefId = currentPlayer(state).id;
+  const newState = moveBlockerAndSteal(state, tileCoord, stealFromPlayerId, thiefId);
   return { ...newState, phase: "main" };
+}
+
+function applyDiscardResources(state: GameState, playerId: string, resources: ResourceHand): GameState {
+  let newState = updatePlayer(state, playerId, (p) => ({
+    ...p,
+    resources: deductCost(p.resources, Object.entries(resources).map(([resourceId, amount]) => ({ resourceId, amount }))),
+  }));
+  const playersAwaitingDiscard = newState.playersAwaitingDiscard.filter((id) => id !== playerId);
+  newState = { ...newState, playersAwaitingDiscard };
+  if (playersAwaitingDiscard.length === 0) {
+    newState = { ...newState, phase: "blocker-resolution" };
+  }
+  return newState;
+}
+
+function applyTradeWithBank(
+  state: GameState,
+  playerId: string,
+  giveResourceId: string,
+  giveAmount: number,
+  receiveResourceId: string
+): GameState {
+  return updatePlayer(state, playerId, (p) => {
+    const resources = { ...p.resources };
+    resources[giveResourceId] = (resources[giveResourceId] ?? 0) - giveAmount;
+    resources[receiveResourceId] = (resources[receiveResourceId] ?? 0) + 1;
+    return { ...p, resources };
+  });
+}
+
+function applyBuyDevelopmentCard(ruleset: Ruleset, topology: BoardTopology, state: GameState, playerId: string): GameState {
+  const cardId = state.developmentCardDeck[0];
+  let newState: GameState = { ...state, developmentCardDeck: state.developmentCardDeck.slice(1) };
+  newState = updatePlayer(newState, playerId, (p) => ({
+    ...p,
+    resources: deductCost(p.resources, ruleset.developmentCardCost),
+    developmentCards: { ...p.developmentCards, [cardId]: (p.developmentCards[cardId] ?? 0) + 1 },
+  }));
+  return recomputeAll(ruleset, topology, newState);
+}
+
+function spendDevelopmentCard(state: GameState, playerId: string, cardId: string): GameState {
+  return updatePlayer(state, playerId, (p) => ({
+    ...p,
+    developmentCards: { ...p.developmentCards, [cardId]: (p.developmentCards[cardId] ?? 0) - 1 },
+  }));
+}
+
+function applyPlayDevelopmentCard(
+  ruleset: Ruleset,
+  topology: BoardTopology,
+  state: GameState,
+  playerId: string,
+  move: Extract<Move, { type: "PLAY_DEVELOPMENT_CARD" }>
+): GameState {
+  let newState = spendDevelopmentCard(state, playerId, move.cardId);
+
+  switch (move.cardId) {
+    case "soldier": {
+      newState = moveBlockerAndSteal(newState, move.tileCoord, move.stealFromPlayerId, playerId);
+      newState = updatePlayer(newState, playerId, (p) => ({ ...p, soldiersPlayed: p.soldiersPlayed + 1 }));
+      return recomputeAll(ruleset, topology, newState);
+    }
+    case "trade-monopoly": {
+      let total = 0;
+      newState = {
+        ...newState,
+        players: newState.players.map((p) => {
+          if (p.id === playerId) return p;
+          const amount = p.resources[move.resourceId] ?? 0;
+          total += amount;
+          return { ...p, resources: { ...p.resources, [move.resourceId]: 0 } };
+        }),
+      };
+      newState = updatePlayer(newState, playerId, (p) => ({
+        ...p,
+        resources: { ...p.resources, [move.resourceId]: (p.resources[move.resourceId] ?? 0) + total },
+      }));
+      return newState;
+    }
+    case "path-builder": {
+      const [edgeA, edgeB] = move.edgeIds;
+      newState = {
+        ...newState,
+        roads: {
+          ...newState.roads,
+          [edgeA]: { ownerId: playerId },
+          [edgeB]: { ownerId: playerId },
+        },
+      };
+      return recomputeAll(ruleset, topology, newState);
+    }
+    case "harvest": {
+      const gained: ResourceHand = {};
+      for (const resourceId of move.resourceIds) {
+        gained[resourceId] = (gained[resourceId] ?? 0) + 1;
+      }
+      return updatePlayer(newState, playerId, (p) => ({ ...p, resources: mergeResources(p.resources, gained) }));
+    }
+  }
 }
 
 function applyEndTurn(state: GameState): GameState {
@@ -230,13 +324,21 @@ export function applyMove(
     case "PLACE_SETTLEMENT":
       return applyPlaceSettlement(ruleset, topology, state, playerId, move.vertexId);
     case "PLACE_ROAD":
-      return applyPlaceRoad(ruleset, state, playerId, move.edgeId);
+      return applyPlaceRoad(ruleset, topology, state, playerId, move.edgeId);
     case "BUILD_CITY":
-      return applyBuildCity(ruleset, state, playerId, move.vertexId);
+      return applyBuildCity(ruleset, topology, state, playerId, move.vertexId);
     case "ROLL_DICE":
       return applyRollDice(ruleset, topology, state);
     case "MOVE_BLOCKER":
       return applyMoveBlocker(state, move.tileCoord, move.stealFromPlayerId);
+    case "DISCARD_RESOURCES":
+      return applyDiscardResources(state, playerId, move.resources);
+    case "TRADE_WITH_BANK":
+      return applyTradeWithBank(state, playerId, move.giveResourceId, move.giveAmount, move.receiveResourceId);
+    case "BUY_DEVELOPMENT_CARD":
+      return applyBuyDevelopmentCard(ruleset, topology, state, playerId);
+    case "PLAY_DEVELOPMENT_CARD":
+      return applyPlayDevelopmentCard(ruleset, topology, state, playerId, move);
     case "END_TURN":
       return applyEndTurn(state);
   }
