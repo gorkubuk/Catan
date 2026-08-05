@@ -3,13 +3,16 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "rea
 import { HexBoard } from "../components/HexBoard";
 import { PlayerPanel } from "../components/PlayerPanel";
 import { DiscardPanel } from "../components/DiscardPanel";
+import { BankTradePanel } from "../components/BankTradePanel";
+import { DevelopmentCardsPanel } from "../components/DevelopmentCardsPanel";
 import { useGameEngine } from "../store/useGameEngine";
 import { createGame } from "../engine/state/createGame";
 import { randomSeed } from "../engine/rng";
 import { islandTradeRuleset } from "../engine/rulesets/islandTrade";
 import { axialKey } from "../engine/board/types";
 import type { AxialCoord } from "../engine/board/types";
-import type { ResourceHand } from "../engine/state/types";
+import type { BoardTopology } from "../engine/board/topology";
+import type { GameState, ResourceHand } from "../engine/state/types";
 
 const PLAYER_ROSTER = [
   { id: "p1", displayName: "Player 1" },
@@ -24,12 +27,34 @@ function newGameState() {
 interface StealPrompt {
   tileCoord: AxialCoord;
   eligiblePlayerIds: string[];
+  /** What to do once a target (or "skip") is chosen. */
+  resolve: (targetPlayerId: string | null) => void;
+}
+
+type InteractionMode = { kind: "idle" } | { kind: "playing-soldier" } | { kind: "playing-path-builder"; firstEdgeId: string | null };
+
+function eligibleStealTargets(state: GameState, topology: BoardTopology, coord: AxialCoord, actingPlayerId: string): string[] {
+  const key = axialKey(coord);
+  const touchingVertexIds = [...topology.vertices.values()]
+    .filter((v) => v.tileCoords.some((c) => axialKey(c) === key))
+    .map((v) => v.id);
+
+  const owners = new Set<string>();
+  for (const vId of touchingVertexIds) {
+    const building = state.buildings[vId];
+    if (building && building.ownerId !== actingPlayerId) owners.add(building.ownerId);
+  }
+  return [...owners].filter((pid) => {
+    const p = state.players.find((pl) => pl.id === pid)!;
+    return Object.values(p.resources).reduce((a, b) => a + b, 0) > 0;
+  });
 }
 
 export function GameScreen() {
   const [initialState, setInitialState] = useState(newGameState);
   const { state, topology, lastError, perform, resetGame } = useGameEngine(islandTradeRuleset, initialState);
   const [stealPrompt, setStealPrompt] = useState<StealPrompt | null>(null);
+  const [mode, setMode] = useState<InteractionMode>({ kind: "idle" });
 
   const currentPlayer = state.players[state.currentPlayerIndex];
   const isSetup = state.phase === "setup-round-1" || state.phase === "setup-round-2";
@@ -39,9 +64,11 @@ export function GameScreen() {
     setInitialState(next);
     resetGame(next);
     setStealPrompt(null);
+    setMode({ kind: "idle" });
   };
 
   const handleVertexPress = (vertexId: string) => {
+    if (mode.kind !== "idle") return;
     const existing = state.buildings[vertexId];
     if (existing) {
       if (state.phase === "main" && existing.ownerId === currentPlayer.id && existing.buildingTypeId === "settlement") {
@@ -56,43 +83,60 @@ export function GameScreen() {
   };
 
   const handleEdgePress = (edgeId: string) => {
+    if (mode.kind === "playing-path-builder") {
+      if (!mode.firstEdgeId) {
+        setMode({ kind: "playing-path-builder", firstEdgeId: edgeId });
+        return;
+      }
+      if (mode.firstEdgeId === edgeId) return;
+      const ok = perform(currentPlayer.id, {
+        type: "PLAY_DEVELOPMENT_CARD",
+        cardId: "path-builder",
+        edgeIds: [mode.firstEdgeId, edgeId],
+      });
+      if (ok) setMode({ kind: "idle" });
+      return;
+    }
+    if (mode.kind !== "idle") return;
     perform(currentPlayer.id, { type: "PLACE_ROAD", edgeId });
   };
 
   const handleTilePress = (coord: AxialCoord) => {
-    if (state.phase !== "blocker-resolution") return;
     const key = axialKey(coord);
     if (key === state.blockerTileKey) return;
 
-    const touchingVertexIds = [...topology.vertices.values()]
-      .filter((v) => v.tileCoords.some((c) => axialKey(c) === key))
-      .map((v) => v.id);
-
-    const owners = new Set<string>();
-    for (const vId of touchingVertexIds) {
-      const building = state.buildings[vId];
-      if (building && building.ownerId !== currentPlayer.id) owners.add(building.ownerId);
+    if (state.phase === "blocker-resolution") {
+      const eligiblePlayerIds = eligibleStealTargets(state, topology, coord, currentPlayer.id);
+      if (eligiblePlayerIds.length === 0) {
+        perform(currentPlayer.id, { type: "MOVE_BLOCKER", tileCoord: coord });
+      } else {
+        setStealPrompt({
+          tileCoord: coord,
+          eligiblePlayerIds,
+          resolve: (targetPlayerId) =>
+            perform(currentPlayer.id, { type: "MOVE_BLOCKER", tileCoord: coord, stealFromPlayerId: targetPlayerId ?? undefined }),
+        });
+      }
+      return;
     }
-    const eligiblePlayerIds = [...owners].filter((pid) => {
-      const p = state.players.find((pl) => pl.id === pid)!;
-      return Object.values(p.resources).reduce((a, b) => a + b, 0) > 0;
-    });
 
-    if (eligiblePlayerIds.length === 0) {
-      perform(currentPlayer.id, { type: "MOVE_BLOCKER", tileCoord: coord });
-    } else {
-      setStealPrompt({ tileCoord: coord, eligiblePlayerIds });
+    if (mode.kind === "playing-soldier") {
+      const eligiblePlayerIds = eligibleStealTargets(state, topology, coord, currentPlayer.id);
+      const finish = (targetPlayerId: string | null) => {
+        const ok = perform(currentPlayer.id, {
+          type: "PLAY_DEVELOPMENT_CARD",
+          cardId: "soldier",
+          tileCoord: coord,
+          stealFromPlayerId: targetPlayerId ?? undefined,
+        });
+        if (ok) setMode({ kind: "idle" });
+      };
+      if (eligiblePlayerIds.length === 0) {
+        finish(null);
+      } else {
+        setStealPrompt({ tileCoord: coord, eligiblePlayerIds, resolve: finish });
+      }
     }
-  };
-
-  const resolveSteal = (targetPlayerId: string | null) => {
-    if (!stealPrompt) return;
-    perform(currentPlayer.id, {
-      type: "MOVE_BLOCKER",
-      tileCoord: stealPrompt.tileCoord,
-      stealFromPlayerId: targetPlayerId ?? undefined,
-    });
-    setStealPrompt(null);
   };
 
   const handleDiscardConfirm = (playerId: string) => (resources: ResourceHand) => {
@@ -104,7 +148,13 @@ export function GameScreen() {
       ? `${currentPlayer.displayName}: place a settlement`
       : isSetup && state.setupStep === "road"
         ? `${currentPlayer.displayName}: place the connecting road`
-        : null;
+        : mode.kind === "playing-soldier"
+          ? "Tap a tile to move the Raider"
+          : mode.kind === "playing-path-builder"
+            ? mode.firstEdgeId
+              ? "Tap a second edge for your free road"
+              : "Tap an edge for your first free road"
+            : null;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -117,6 +167,11 @@ export function GameScreen() {
         </View>
 
         {setupHint && <Text style={styles.hint}>{setupHint}</Text>}
+        {mode.kind !== "idle" && (
+          <Pressable onPress={() => setMode({ kind: "idle" })}>
+            <Text style={styles.cancelText}>Cancel</Text>
+          </Pressable>
+        )}
         {lastError && <Text style={styles.error}>{lastError}</Text>}
         {state.phase === "game-over" && (
           <Text style={styles.winner}>
@@ -141,11 +196,24 @@ export function GameScreen() {
             <Text style={styles.hint}>Steal a resource from:</Text>
             <View style={styles.stealRow}>
               {stealPrompt.eligiblePlayerIds.map((pid) => (
-                <Pressable key={pid} style={styles.stealBtn} onPress={() => resolveSteal(pid)}>
+                <Pressable
+                  key={pid}
+                  style={styles.stealBtn}
+                  onPress={() => {
+                    stealPrompt.resolve(pid);
+                    setStealPrompt(null);
+                  }}
+                >
                   <Text style={styles.stealBtnText}>{state.players.find((p) => p.id === pid)!.displayName}</Text>
                 </Pressable>
               ))}
-              <Pressable style={[styles.stealBtn, styles.skipBtn]} onPress={() => resolveSteal(null)}>
+              <Pressable
+                style={[styles.stealBtn, styles.skipBtn]}
+                onPress={() => {
+                  stealPrompt.resolve(null);
+                  setStealPrompt(null);
+                }}
+              >
                 <Text style={styles.stealBtnText}>Skip</Text>
               </Pressable>
             </View>
@@ -176,13 +244,42 @@ export function GameScreen() {
           lastDiceRoll={state.lastDiceRoll}
         />
 
+        {state.phase === "main" && mode.kind === "idle" && (
+          <>
+            <BankTradePanel
+              ruleset={islandTradeRuleset}
+              player={currentPlayer}
+              onTrade={(give, receive) =>
+                perform(currentPlayer.id, {
+                  type: "TRADE_WITH_BANK",
+                  giveResourceId: give,
+                  giveAmount: islandTradeRuleset.bankTradeRatio,
+                  receiveResourceId: receive,
+                })
+              }
+            />
+            <DevelopmentCardsPanel
+              ruleset={islandTradeRuleset}
+              player={currentPlayer}
+              onStartSoldierPlay={() => setMode({ kind: "playing-soldier" })}
+              onStartPathBuilderPlay={() => setMode({ kind: "playing-path-builder", firstEdgeId: null })}
+              onPlayMonopoly={(resourceId) =>
+                perform(currentPlayer.id, { type: "PLAY_DEVELOPMENT_CARD", cardId: "trade-monopoly", resourceId })
+              }
+              onPlayHarvest={(resourceIds) =>
+                perform(currentPlayer.id, { type: "PLAY_DEVELOPMENT_CARD", cardId: "harvest", resourceIds })
+              }
+            />
+          </>
+        )}
+
         <View style={styles.actionRow}>
           {state.phase === "awaiting-roll" && (
             <Pressable style={styles.actionBtn} onPress={() => perform(currentPlayer.id, { type: "ROLL_DICE" })}>
               <Text style={styles.actionBtnText}>Roll Dice</Text>
             </Pressable>
           )}
-          {state.phase === "main" && (
+          {state.phase === "main" && mode.kind === "idle" && (
             <>
               <Pressable
                 style={styles.actionBtn}
@@ -209,6 +306,7 @@ const styles = StyleSheet.create({
   newGameBtn: { backgroundColor: "#2c3e50", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   newGameBtnText: { color: "#fff", fontWeight: "600" },
   hint: { color: "#f1c40f", fontSize: 13, fontWeight: "600" },
+  cancelText: { color: "#e74c3c", fontSize: 13, fontWeight: "600" },
   error: { color: "#e74c3c", fontSize: 13 },
   winner: { color: "#2ecc71", fontSize: 18, fontWeight: "800", textAlign: "center" },
   stealPanel: { backgroundColor: "#161616", borderRadius: 12, padding: 12, gap: 8 },
