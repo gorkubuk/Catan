@@ -1,16 +1,32 @@
 import React, { useMemo } from "react";
 import { View } from "react-native";
-import Svg, { Circle, Line, Polygon, Text as SvgText } from "react-native-svg";
+import Svg, { Circle, Defs, Ellipse, Line, LinearGradient, Path, Stop, Text as SvgText } from "react-native-svg";
 import type { AxialCoord } from "../engine/board/types";
 import { axialKey } from "../engine/board/types";
 import type { BoardTopology } from "../engine/board/topology";
 import type { Board } from "../engine/board/types";
 import type { PlayerState, RoadPiece, SettlementOrCity } from "../engine/state/types";
-import { axialToPixel, hexCorners, vertexToPixel } from "./hexLayout";
-import { colorForPlayerIndex, resourceColors, wastelandColor } from "./theme";
+import { axialToPixel, hexCorners, roundedPolygonPath, vertexToPixel } from "./hexLayout";
+import {
+  blockerFill,
+  blockerRing,
+  colorForPlayerIndex,
+  numberTokenCold,
+  numberTokenFace,
+  numberTokenHot,
+  numberTokenRing,
+  resourceColors,
+  tileHighlight,
+  tileStroke,
+  unclaimedEdge,
+  unclaimedVertex,
+  unclaimedVertexStroke,
+  wastelandColor,
+} from "./theme";
 
 const HEX_SIZE = 44;
 const PADDING = HEX_SIZE * 1.5;
+const CORNER_RADIUS = HEX_SIZE * 0.14;
 
 interface HexBoardProps {
   board: Board;
@@ -39,11 +55,15 @@ export function HexBoard({
 
   const tileGeometry = useMemo(
     () =>
-      board.tiles.map((tile) => ({
-        tile,
-        center: axialToPixel(tile.coord, HEX_SIZE),
-        corners: hexCorners(axialToPixel(tile.coord, HEX_SIZE), HEX_SIZE * 0.96),
-      })),
+      board.tiles.map((tile) => {
+        const center = axialToPixel(tile.coord, HEX_SIZE);
+        return {
+          tile,
+          center,
+          frameCorners: hexCorners(center, HEX_SIZE),
+          corners: hexCorners(center, HEX_SIZE * 0.86),
+        };
+      }),
     [board]
   );
 
@@ -63,8 +83,8 @@ export function HexBoard({
   );
 
   const bounds = useMemo(() => {
-    const xs = tileGeometry.flatMap((t) => t.corners.map((c) => c.x));
-    const ys = tileGeometry.flatMap((t) => t.corners.map((c) => c.y));
+    const xs = tileGeometry.flatMap((t) => t.frameCorners.map((c) => c.x));
+    const ys = tileGeometry.flatMap((t) => t.frameCorners.map((c) => c.y));
     const minX = Math.min(...xs) - PADDING;
     const maxX = Math.max(...xs) + PADDING;
     const minY = Math.min(...ys) - PADDING;
@@ -75,27 +95,53 @@ export function HexBoard({
   return (
     <View style={{ width: "100%", aspectRatio: bounds.width / bounds.height }}>
       <Svg width="100%" height="100%" viewBox={`${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`}>
-        {tileGeometry.map(({ tile, center, corners }) => {
+        <Defs>
+          <LinearGradient id="woodFrame" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="#7a5530" />
+            <Stop offset="55%" stopColor="#5c3d1f" />
+            <Stop offset="100%" stopColor="#432a13" />
+          </LinearGradient>
+        </Defs>
+        {tileGeometry.map(({ tile, center, corners, frameCorners }) => {
           const fill = tile.resourceId ? resourceColors[tile.resourceId] ?? "#999" : wastelandColor;
-          const points = corners.map((c) => `${c.x},${c.y}`).join(" ");
+          const framePath = roundedPolygonPath(frameCorners, CORNER_RADIUS * 1.3);
+          const path = roundedPolygonPath(corners, CORNER_RADIUS);
           return (
             <React.Fragment key={axialKey(tile.coord)}>
-              <Polygon
-                points={points}
-                fill={fill}
-                stroke="#1a1a1a"
-                strokeWidth={1.5}
+              <Path
+                d={framePath}
+                fill="url(#woodFrame)"
+                stroke={tileStroke}
+                strokeWidth={2}
+                strokeLinejoin="round"
                 onPress={onTilePress ? () => onTilePress(tile.coord) : undefined}
+              />
+              <Path
+                d={path}
+                fill={fill}
+                stroke={tileStroke}
+                strokeWidth={2}
+                strokeLinejoin="round"
+                onPress={onTilePress ? () => onTilePress(tile.coord) : undefined}
+              />
+              <Ellipse
+                cx={center.x - HEX_SIZE * 0.28}
+                cy={center.y - HEX_SIZE * 0.42}
+                rx={HEX_SIZE * 0.5}
+                ry={HEX_SIZE * 0.22}
+                fill={tileHighlight}
               />
               {tile.numberToken !== null && (
                 <>
-                  <Circle cx={center.x} cy={center.y} r={HEX_SIZE * 0.32} fill="#fdf6e3" stroke="#1a1a1a" />
+                  <Circle cx={center.x} cy={center.y} r={HEX_SIZE * 0.33} fill={numberTokenRing} />
+                  <Circle cx={center.x} cy={center.y} r={HEX_SIZE * 0.28} fill={numberTokenFace} />
                   <SvgText
                     x={center.x}
                     y={center.y + HEX_SIZE * 0.11}
                     fontSize={HEX_SIZE * 0.34}
                     fontWeight="bold"
-                    fill={tile.numberToken === 6 || tile.numberToken === 8 ? "#c0392b" : "#1a1a1a"}
+                    fontFamily="Georgia, 'Times New Roman', serif"
+                    fill={tile.numberToken === 6 || tile.numberToken === 8 ? numberTokenHot : numberTokenCold}
                     textAnchor="middle"
                   >
                     {tile.numberToken}
@@ -103,7 +149,10 @@ export function HexBoard({
                 </>
               )}
               {axialKey(tile.coord) === blockerTileKey && (
-                <Circle cx={center.x} cy={center.y} r={HEX_SIZE * 0.18} fill="#222" stroke="#fff" strokeWidth={2} />
+                <>
+                  <Circle cx={center.x} cy={center.y} r={HEX_SIZE * 0.2} fill={blockerFill} stroke={blockerRing} strokeWidth={2} />
+                  <Circle cx={center.x - HEX_SIZE * 0.06} cy={center.y - HEX_SIZE * 0.06} r={HEX_SIZE * 0.05} fill={blockerRing} opacity={0.5} />
+                </>
               )}
             </React.Fragment>
           );
@@ -111,7 +160,7 @@ export function HexBoard({
 
         {edgeGeometry.map(({ edge, a, b }) => {
           const road = roads[edge.id];
-          const color = road ? colorForPlayerIndex(playerIndexById.get(road.ownerId) ?? 0) : "#ffffff33";
+          const color = road ? colorForPlayerIndex(playerIndexById.get(road.ownerId) ?? 0) : unclaimedEdge;
           return (
             <Line
               key={edge.id}
@@ -120,7 +169,7 @@ export function HexBoard({
               x2={b.x}
               y2={b.y}
               stroke={color}
-              strokeWidth={road ? 7 : 10}
+              strokeWidth={road ? 8 : 10}
               strokeLinecap="round"
               onPress={onEdgePress ? () => onEdgePress(edge.id) : undefined}
             />
@@ -129,19 +178,22 @@ export function HexBoard({
 
         {vertexGeometry.map(({ vertex, point }) => {
           const building = buildings[vertex.id];
-          const color = building ? colorForPlayerIndex(playerIndexById.get(building.ownerId) ?? 0) : "#ffffff";
-          const radius = building?.buildingTypeId === "city" ? HEX_SIZE * 0.22 : building ? HEX_SIZE * 0.16 : HEX_SIZE * 0.13;
+          const color = building ? colorForPlayerIndex(playerIndexById.get(building.ownerId) ?? 0) : unclaimedVertex;
+          const isCity = building?.buildingTypeId === "city";
+          const radius = isCity ? HEX_SIZE * 0.23 : building ? HEX_SIZE * 0.17 : HEX_SIZE * 0.12;
           return (
-            <Circle
-              key={vertex.id}
-              cx={point.x}
-              cy={point.y}
-              r={radius}
-              fill={color}
-              stroke="#1a1a1a"
-              strokeWidth={building ? 2 : 1}
-              onPress={onVertexPress ? () => onVertexPress(vertex.id) : undefined}
-            />
+            <React.Fragment key={vertex.id}>
+              <Circle
+                cx={point.x}
+                cy={point.y}
+                r={radius}
+                fill={color}
+                stroke={building ? "#241407" : unclaimedVertexStroke}
+                strokeWidth={building ? 2.5 : 1.5}
+                onPress={onVertexPress ? () => onVertexPress(vertex.id) : undefined}
+              />
+              {isCity && <Circle cx={point.x} cy={point.y} r={radius * 0.4} fill={numberTokenFace} opacity={0.8} />}
+            </React.Fragment>
           );
         })}
       </Svg>

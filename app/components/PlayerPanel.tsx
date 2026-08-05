@@ -2,7 +2,7 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import type { GamePhase, PlayerState } from "../engine/state/types";
 import type { Ruleset } from "../engine/ruleset/types";
-import { colorForPlayerIndex } from "./theme";
+import { accent, colorForPlayerIndex, headingFont, panel } from "./theme";
 
 interface PlayerPanelProps {
   ruleset: Ruleset;
@@ -51,13 +51,13 @@ export function PlayerPanel({ ruleset, player, playerIndex, phase, turnNumber, l
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 12, backgroundColor: "#161616", borderRadius: 12, gap: 6 },
+  container: { padding: 12, backgroundColor: panel.background, borderRadius: 12, gap: 6, borderWidth: 1, borderColor: panel.border },
   headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  swatch: { width: 14, height: 14, borderRadius: 7 },
-  name: { color: "#fff", fontSize: 16, fontWeight: "700", flex: 1 },
-  vp: { color: "#fdf6e3", fontSize: 14, fontWeight: "600" },
-  meta: { color: "#aaa", fontSize: 12 },
+  swatch: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, borderColor: "#241407" },
+  name: { color: panel.headerText, fontSize: 17, fontWeight: "700", fontFamily: headingFont, flex: 1 },
+  vp: { color: accent.gold, fontSize: 14, fontWeight: "700" },
+  meta: { color: panel.mutedText, fontSize: 12 },
   resourceRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
-  resourceChip: { backgroundColor: "#262626", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  resourceChipText: { color: "#eee", fontSize: 12 },
+  resourceChip: { backgroundColor: "#3a2716", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: "#5a4127" },
+  resourceChipText: { color: panel.bodyText, fontSize: 12 },
 });

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { Ruleset } from "../engine/ruleset/types";
 import type { PlayerState } from "../engine/state/types";
+import { accent, headingFont, panel } from "./theme";
 
 interface DevelopmentCardsPanelProps {
   ruleset: Ruleset;
@@ -115,16 +116,16 @@ export function DevelopmentCardsPanel({
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 12, backgroundColor: "#161616", borderRadius: 12, gap: 8 },
-  title: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  container: { padding: 12, backgroundColor: panel.background, borderRadius: 12, gap: 8, borderWidth: 1, borderColor: panel.border },
+  title: { color: panel.headerText, fontWeight: "700", fontSize: 14, fontFamily: headingFont },
   cardRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  cardLabel: { color: "#ddd", fontSize: 13 },
-  playBtn: { backgroundColor: "#2980b9", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  playBtnText: { color: "#fff", fontWeight: "600", fontSize: 12 },
+  cardLabel: { color: panel.bodyText, fontSize: 13 },
+  playBtn: { backgroundColor: accent.info, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  playBtnText: { color: "#f1e2c0", fontWeight: "600", fontSize: 12 },
   pickerPanel: { marginTop: 4, gap: 8 },
-  pickerTitle: { color: "#f1c40f", fontSize: 12, fontWeight: "600" },
+  pickerTitle: { color: accent.gold, fontSize: 12, fontWeight: "600" },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  chip: { backgroundColor: "#333", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  chipText: { color: "#fff", fontSize: 12 },
-  cancelText: { color: "#e74c3c", fontSize: 12 },
+  chip: { backgroundColor: "#4a3a28", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  chipText: { color: panel.headerText, fontSize: 12 },
+  cancelText: { color: accent.danger, fontSize: 12 },
 });

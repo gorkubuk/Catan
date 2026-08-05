@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { Ruleset } from "../engine/ruleset/types";
 import type { PlayerState, ResourceHand } from "../engine/state/types";
+import { accent, headingFont, panel } from "./theme";
 
 interface DiscardPanelProps {
   ruleset: Ruleset;
@@ -61,15 +62,15 @@ export function DiscardPanel({ ruleset, player, requiredCount, onConfirm }: Disc
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 12, backgroundColor: "#1e1610", borderRadius: 12, gap: 8 },
-  title: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  container: { padding: 12, backgroundColor: panel.background, borderRadius: 12, gap: 8, borderWidth: 1, borderColor: panel.border },
+  title: { color: panel.headerText, fontWeight: "700", fontSize: 14, fontFamily: headingFont },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  label: { color: "#ddd", fontSize: 13 },
+  label: { color: panel.bodyText, fontSize: 13 },
   stepper: { flexDirection: "row", alignItems: "center", gap: 8 },
-  stepBtn: { width: 28, height: 28, borderRadius: 6, backgroundColor: "#333", alignItems: "center", justifyContent: "center" },
-  stepBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  count: { color: "#fff", fontSize: 14, minWidth: 18, textAlign: "center" },
-  confirmBtn: { marginTop: 4, backgroundColor: "#c0392b", paddingVertical: 10, borderRadius: 8, alignItems: "center" },
-  confirmBtnDisabled: { opacity: 0.4 },
-  confirmBtnText: { color: "#fff", fontWeight: "700" },
+  stepBtn: { width: 28, height: 28, borderRadius: 6, backgroundColor: "#4a3a28", alignItems: "center", justifyContent: "center" },
+  stepBtnText: { color: panel.headerText, fontSize: 16, fontWeight: "700" },
+  count: { color: panel.headerText, fontSize: 14, minWidth: 18, textAlign: "center" },
+  confirmBtn: { marginTop: 4, backgroundColor: accent.danger, paddingVertical: 10, borderRadius: 8, alignItems: "center" },
+  confirmBtnDisabled: { opacity: accent.disabledOpacity },
+  confirmBtnText: { color: "#f1e2c0", fontWeight: "700" },
 });

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { Ruleset } from "../engine/ruleset/types";
 import type { PlayerState } from "../engine/state/types";
+import { accent, headingFont, panel } from "./theme";
 
 interface BankTradePanelProps {
   ruleset: Ruleset;
@@ -60,15 +61,15 @@ export function BankTradePanel({ ruleset, player, onTrade }: BankTradePanelProps
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 12, backgroundColor: "#161616", borderRadius: 12, gap: 6 },
-  title: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  label: { color: "#aaa", fontSize: 12 },
+  container: { padding: 12, backgroundColor: panel.background, borderRadius: 12, gap: 6, borderWidth: 1, borderColor: panel.border },
+  title: { color: panel.headerText, fontWeight: "700", fontSize: 14, fontFamily: headingFont },
+  label: { color: panel.mutedText, fontSize: 12 },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  chip: { backgroundColor: "#333", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  chipSelected: { backgroundColor: "#2980b9" },
-  chipDisabled: { opacity: 0.35 },
-  chipText: { color: "#fff", fontSize: 12 },
-  confirmBtn: { marginTop: 4, backgroundColor: "#27ae60", paddingVertical: 10, borderRadius: 8, alignItems: "center" },
-  confirmBtnDisabled: { opacity: 0.4 },
-  confirmBtnText: { color: "#fff", fontWeight: "700" },
+  chip: { backgroundColor: "#4a3a28", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  chipSelected: { backgroundColor: accent.info },
+  chipDisabled: { opacity: accent.disabledOpacity },
+  chipText: { color: panel.headerText, fontSize: 12 },
+  confirmBtn: { marginTop: 4, backgroundColor: accent.success, paddingVertical: 10, borderRadius: 8, alignItems: "center" },
+  confirmBtnDisabled: { opacity: accent.disabledOpacity },
+  confirmBtnText: { color: "#f1e2c0", fontWeight: "700" },
 });

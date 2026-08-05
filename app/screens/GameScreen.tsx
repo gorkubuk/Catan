@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { HexBoard } from "../components/HexBoard";
 import { PlayerPanel } from "../components/PlayerPanel";
 import { DiscardPanel } from "../components/DiscardPanel";
 import { BankTradePanel } from "../components/BankTradePanel";
 import { DevelopmentCardsPanel } from "../components/DevelopmentCardsPanel";
+import { accent, headingFont, panel, playerColors, tableGradient } from "../components/theme";
 import { useGameEngine } from "../store/useGameEngine";
 import { createGame } from "../engine/state/createGame";
 import { randomSeed } from "../engine/rng";
@@ -157,7 +159,8 @@ export function GameScreen() {
             : null;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <LinearGradient colors={tableGradient} style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>Island Trade</Text>
@@ -294,27 +297,35 @@ export function GameScreen() {
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#0d0d0d" },
+  safeArea: { flex: 1 },
   scrollContent: { padding: 16, gap: 12 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  title: { color: "#fff", fontSize: 20, fontWeight: "800" },
-  newGameBtn: { backgroundColor: "#2c3e50", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  newGameBtnText: { color: "#fff", fontWeight: "600" },
-  hint: { color: "#f1c40f", fontSize: 13, fontWeight: "600" },
-  cancelText: { color: "#e74c3c", fontSize: 13, fontWeight: "600" },
-  error: { color: "#e74c3c", fontSize: 13 },
-  winner: { color: "#2ecc71", fontSize: 18, fontWeight: "800", textAlign: "center" },
-  stealPanel: { backgroundColor: "#161616", borderRadius: 12, padding: 12, gap: 8 },
+  title: { color: panel.headerText, fontSize: 24, fontWeight: "800", fontFamily: headingFont, letterSpacing: 0.5 },
+  newGameBtn: {
+    backgroundColor: panel.background,
+    borderWidth: 1,
+    borderColor: panel.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  newGameBtnText: { color: panel.headerText, fontWeight: "600" },
+  hint: { color: accent.gold, fontSize: 13, fontWeight: "600" },
+  cancelText: { color: accent.danger, fontSize: 13, fontWeight: "600" },
+  error: { color: accent.danger, fontSize: 13 },
+  winner: { color: "#c9d97a", fontSize: 20, fontWeight: "800", fontFamily: headingFont, textAlign: "center" },
+  stealPanel: { backgroundColor: panel.background, borderRadius: 12, padding: 12, gap: 8, borderWidth: 1, borderColor: panel.border },
   stealRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  stealBtn: { backgroundColor: "#8e44ad", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
-  skipBtn: { backgroundColor: "#555" },
-  stealBtnText: { color: "#fff", fontWeight: "600" },
+  stealBtn: { backgroundColor: playerColors[3], paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  skipBtn: { backgroundColor: "#4a3a28" },
+  stealBtnText: { color: panel.headerText, fontWeight: "600" },
   actionRow: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
-  actionBtn: { backgroundColor: "#27ae60", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10 },
-  actionBtnText: { color: "#fff", fontWeight: "700" },
+  actionBtn: { backgroundColor: accent.gold, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10 },
+  actionBtnText: { color: accent.goldText, fontWeight: "700" },
 });
