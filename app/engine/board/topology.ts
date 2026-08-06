@@ -30,7 +30,7 @@ export interface BoardTopology {
   vertexNeighbors: Map<string, string[]>;
 }
 
-const NEIGHBOR_DIRS: AxialCoord[] = [
+export const NEIGHBOR_DIRS: AxialCoord[] = [
   { q: 1, r: 0 },
   { q: 1, r: -1 },
   { q: 0, r: -1 },
